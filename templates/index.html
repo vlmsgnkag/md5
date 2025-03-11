@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tài Xỉu Hash Generator</title>
+  <!-- Bootstrap CDN -->
+  <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+  <style>
+    body {
+      background: #f8f9fa;
+    }
+    .card {
+      margin-top: 30px;
+      border-radius: 15px;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    }
+    .header {
+      text-align: center;
+      margin: 20px 0;
+    }
+    .result-section {
+      margin-top: 20px;
+    }
+    .hash-details {
+      font-size: 0.9rem;
+      max-height: 300px;
+      overflow-y: auto;
+      background-color: #e9ecef;
+      padding: 10px;
+      border-radius: 5px;
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h1>MD5</h1>
+  </div>
+  <div class="card">
+    <div class="card-body">
+      <form method="POST">
+        <div class="form-group">
+          <label for="inputData">Dữ liệu đầu vào:</label>
+          <input type="text" class="form-control" id="inputData" name="input_data" placeholder="Nhập dữ liệu" value="{{ input_data }}" required>
+        </div>
+        <button type="submit" class="btn btn-primary btn-block">Tạo Hash</button>
+      </form>
+      {% if final_hash %}
+      <div class="result-section">
+        <h3 class="mt-4">Kết quả:</h3>
+        <p><strong>Final Hash:</strong> <span class="text-monospace">{{ final_hash }}</span></p>
+        <p><strong>Dự đoán:</strong> <span class="font-weight-bold">{{ prediction }}</span></p>
+        <p><strong>Win Rate:</strong> <span class="font-weight-bold">{{ win_rate }}%</span></p>
+        <hr>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+<!-- Bootstrap JS and dependencies -->
+<script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.1/dist/umd/popper.min.js"></script>
+<script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+</body>
+</html>
