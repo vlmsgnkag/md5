@@ -8,7 +8,7 @@ import os
 app = Flask(__name__)
 
 # --- Hàm MD5 nâng cao ---
-def md5_hash(input_str, iterations=10, salt="TAIXIU_MD5"):
+def md5_hash(input_str, iterations=10, salt="bigSmallMD5"):
     """
     Hàm băm MD5 nâng cao:
     - Ghép salt vào chuỗi đầu vào
