@@ -8,24 +8,41 @@ import os
 app = Flask(__name__)
 
 # --- Hàm MD5 nâng cao ---
-def md5_hash(input_str, iterations=20, salt="TAIXIU_MD5"):
+def md5_hash(input_str, iterations=30, salt="TAIXIU_MD5"):
     """
     Hàm băm MD5 nâng cao:
     - Ghép salt vào chuỗi đầu vào
     - Thực hiện MD5 theo nhiều vòng lặp để “tinh chỉnh” kết quả
     """
     combined = input_str + salt
-    result = hashlib.md5(combined.encode('utf-8')).hexdigest()
+    result = hashlib.md5(combined.encode('utf-8')).digest()  # 16 bytes
+
     for i in range(iterations):
-        # Tạo salt phụ dựa trên số vòng lặp
-        iter_salt = hashlib.md5((salt + str(i)).encode('utf-8')).digest()
-        # Thực hiện XOR giữa result và iter_salt
+        # Bước 2: Tạo hai salt phụ từ MD5 và SHA256, kết hợp chúng
+        salt_str = salt + str(i)
+        salt_md5 = hashlib.md5(salt_str.encode('utf-8')).digest()       # 16 bytes
+        salt_sha256 = hashlib.sha256(salt_str.encode('utf-8')).digest()   # 32 bytes, dùng 16 bytes đầu
+        iter_salt = bytes(a ^ b for a, b in zip(salt_md5, salt_sha256[:16]))
+        
+        # Bước 3: XOR kết quả hiện tại với salt phụ (làm việc với bytes)
         mixed = bytes(a ^ b for a, b in zip(result, iter_salt))
-        # Băm lại kết quả đã trộn
-        result = hashlib.md5(mixed).digest()
-        # Xoay trái 3 bit để thêm bước "xáo trộn" bit
+        # Nối kết quả với salt phụ và băm lại bằng MD5
+        combined_mix = mixed + iter_salt
+        result = hashlib.md5(combined_mix).digest()
+        
+        # Bước 4: Xoay trái bit với offset thay đổi (offset từ 1 đến 7)
         int_val = int.from_bytes(result, 'big')
-        int_val = ((int_val << 3) | (int_val >> (128 - 3))) & ((1 << 128) - 1)
+        offset = (i % 7) + 1  # offset từ 1 đến 7 bit
+        int_val = ((int_val << offset) | (int_val >> (128 - offset))) & ((1 << 128) - 1)
+        result = int_val.to_bytes(16, 'big')
+        
+        # Bước 5: Nếu vòng lặp là số chẵn, đảo ngược thứ tự các byte
+        if i % 2 == 0:
+            result = result[::-1]
+        
+        # Bước 6: Nhân kết quả với hằng số nguyên tố và modulo 2^128 để xáo trộn thêm
+        int_val = int.from_bytes(result, 'big')
+        int_val = (int_val * 0x9e3779b97f4a7c15) & ((1 << 128) - 1)
         result = int_val.to_bytes(16, 'big')
     
     return result.hex()
