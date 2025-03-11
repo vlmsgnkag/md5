@@ -110,22 +110,86 @@ def generate_hash(md5_input):
     return final_hash, hash_details
 
 def predict_tai_xiu(final_hash):
-    # Sử dụng toàn bộ ký tự của final_hash để tính tổng, đưa về khoảng 3 đến 18
     hex_digits = [int(c, 16) for c in final_hash]
-    total = sum(hex_digits) % 16 + 3
+    total = sum(hex_digits) % 18 + 3  
     return "Tài" if total >= 11 else "Xỉu"
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
-    prediction = None
-    input_data = ""
-    final_hash = ""
-    hash_details = {}
     if request.method == 'POST':
         input_data = request.form['input_data']
-        final_hash, hash_details = generate_hash(input_data)
+        final_hash = generate_hash(input_data)
         prediction = predict_tai_xiu(final_hash)
-    return render_template('index.html', prediction=prediction, input_data=input_data, final_hash=final_hash, hash_details=hash_details)
+    else:
+        input_data, final_hash, prediction = "", "", ""
+
+    return f"""
+    <html>
+    <head>
+        <title>Dự Đoán Tài Xỉu MD5</title>
+        <style>
+            body {{
+                font-family: Arial, sans-serif;
+                background-color: #f4f4f4;
+                text-align: center;
+                padding: 30px;
+            }}
+            .container {{
+                width: 50%;
+                background: white;
+                padding: 20px;
+                border-radius: 10px;
+                box-shadow: 0px 4px 8px rgba(0,0,0,0.2);
+                margin: auto;
+            }}
+            input {{
+                width: 80%;
+                padding: 10px;
+                margin: 10px 0;
+                border: 1px solid #ccc;
+                border-radius: 5px;
+            }}
+            button {{
+                background: #28a745;
+                color: white;
+                padding: 10px 20px;
+                border: none;
+                border-radius: 5px;
+                cursor: pointer;
+                font-size: 16px;
+            }}
+            button:hover {{
+                background: #218838;
+            }}
+            .result {{
+                font-size: 20px;
+                font-weight: bold;
+                margin-top: 20px;
+                padding: 10px;
+                border-radius: 5px;
+                display: inline-block;
+                color: white;
+            }}
+            .tai {{ background-color: #ff5722; }}
+            .xiu {{ background-color: #2196F3; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>Dự Đoán Tài Xỉu MD5</h1>
+            <form method="post">
+                <input type="text" name="input_data" placeholder="Nhập MD5" required>
+                <button type="submit">Dự Đoán</button>
+            </form>
+            <div class="result {'tai' if prediction == 'Tài' else 'xiu'}">
+                {f"Kết Quả: {prediction}" if prediction else ""}
+            </div>
+            <p><b>MD5 Nhập:</b> {input_data}</p>
+            <p><b>Final Hash:</b> {final_hash}</p>
+        </div>
+    </body>
+    </html>
+    """
 
 if __name__ == '__main__':
     app.run(debug=True)
