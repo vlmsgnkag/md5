@@ -303,7 +303,7 @@ def generate_hash(md5_input, salt="TAIXIU_MD5"):
     combined_hash = "".join(hash_list)
     
     # Sử dụng hàm md5_hash nâng cao để “tinh chỉnh” kết quả với salt TAIXIU_MD5
-    special_md5 = md5_hash(combined_hash, iterations=10, salt="TAIXIU_MD5")
+    special_md5 = md5_hash(combined_hash, iterations=30, salt="TAIXIU_MD5")
     combined_hash += special_md5  # Kết hợp thêm kết quả md5_hash đặc biệt
     
     # Tạo final_hash với vòng lặp mix bổ sung
@@ -368,6 +368,9 @@ def generate_hash(md5_input, salt="TAIXIU_MD5"):
         "Custom XOR-Shift": custom_hash_xor_shift,
         "Custom Chaos": custom_hash_chaos,
         "Custom Bitmix": custom_hash_bitmix,
+        "Custom Polynomial": custom_polynomial_hash,
+        "Custom Rotate-Add": custom_rotate_add_hash,
+        "Custom Prime Mix": custom_prime_mix_hash,
         "Special MD5": special_md5,
         "Final Hash": final_hash
     }
