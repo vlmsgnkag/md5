@@ -1,41 +1,132 @@
 from flask import Flask, request, render_template
 import hashlib
 import base64
+import hmac
+import zlib
 
 app = Flask(__name__)
 
-def generate_hash(md5_input):
-    # Các hàm băm cơ bản
-    sha256 = hashlib.sha256(md5_input.encode('utf-8')).hexdigest()
-    sha3_256 = hashlib.sha3_256(md5_input.encode('utf-8')).hexdigest()
-    blake2b = hashlib.blake2b(md5_input.encode('utf-8')).hexdigest()  # mặc định 512 bit
-    sha512 = hashlib.sha512(md5_input.encode('utf-8')).hexdigest()
-    blake2s = hashlib.blake2s(md5_input.encode('utf-8')).hexdigest()
-    sha1 = hashlib.sha1(md5_input.encode('utf-8')).hexdigest()
-    sha384 = hashlib.sha384(md5_input.encode('utf-8')).hexdigest()
-    sha3_512 = hashlib.sha3_512(md5_input.encode('utf-8')).hexdigest()
-    sha224 = hashlib.sha224(md5_input.encode('utf-8')).hexdigest()
-    sha3_224 = hashlib.sha3_224(md5_input.encode('utf-8')).hexdigest()
-    sha3_384 = hashlib.sha3_384(md5_input.encode('utf-8')).hexdigest()
-    blake2b_512 = hashlib.blake2b(md5_input.encode('utf-8'), digest_size=64).hexdigest()
-    blake2b_256 = hashlib.blake2b(md5_input.encode('utf-8'), digest_size=32).hexdigest()
+# --- Các hàm băm tự chế cũ ---
+def custom_djb2(s):
+    hash_val = 5381
+    for c in s:
+        hash_val = ((hash_val << 5) + hash_val) + ord(c)  # hash * 33 + ord(c)
+    return hex(hash_val & 0xFFFFFFFFFFFFFFFF)[2:]
+
+def custom_sdbm(s):
+    hash_val = 0
+    for c in s:
+        hash_val = ord(c) + (hash_val << 6) + (hash_val << 16) - hash_val
+    return hex(hash_val & 0xFFFFFFFFFFFFFFFF)[2:]
+
+# Hàm băm FNV-1a (64-bit)
+def custom_fnv1a(s):
+    hash_val = 14695981039346656037
+    fnv_prime = 1099511628211
+    for byte in s.encode('utf-8'):
+        hash_val ^= byte
+        hash_val *= fnv_prime
+        hash_val &= 0xFFFFFFFFFFFFFFFF  # giới hạn 64-bit
+    return hex(hash_val)[2:]
+
+# Hàm băm Adler-32 tự chế
+def custom_adler32(s):
+    a = 1
+    b = 0
+    MOD_ADLER = 65521
+    for byte in s.encode('utf-8'):
+        a = (a + byte) % MOD_ADLER
+        b = (b + a) % MOD_ADLER
+    result = (b << 16) | a
+    return hex(result)[2:]
+
+# --- Bổ sung các hàm băm nâng cao mới ---
+# MurmurHash3 (x86, 32-bit) thuần Python
+def custom_murmur3(s, seed=0):
+    key = bytearray(s.encode('utf-8'))
+    length = len(key)
+    nblocks = length // 4
+
+    h = seed
+    c1 = 0xcc9e2d51
+    c2 = 0x1b873593
+
+    # body
+    for i in range(nblocks):
+        k = key[i*4] | (key[i*4+1] << 8) | (key[i*4+2] << 16) | (key[i*4+3] << 24)
+        k = (k * c1) & 0xFFFFFFFF
+        k = ((k << 15) | (k >> (32-15))) & 0xFFFFFFFF
+        k = (k * c2) & 0xFFFFFFFF
+
+        h ^= k
+        h = ((h << 13) | (h >> (32-13))) & 0xFFFFFFFF
+        h = (h * 5 + 0xe6546b64) & 0xFFFFFFFF
+
+    # tail
+    tail_index = nblocks * 4
+    k = 0
+    tail_size = length & 3
+    if tail_size == 3:
+        k |= key[tail_index+2] << 16
+    if tail_size >= 2:
+        k |= key[tail_index+1] << 8
+    if tail_size >= 1:
+        k |= key[tail_index]
+        k = (k * c1) & 0xFFFFFFFF
+        k = ((k << 15) | (k >> (32-15))) & 0xFFFFFFFF
+        k = (k * c2) & 0xFFFFFFFF
+        h ^= k
+
+    # finalization
+    h ^= length
+    h ^= (h >> 16)
+    h = (h * 0x85ebca6b) & 0xFFFFFFFF
+    h ^= (h >> 13)
+    h = (h * 0xc2b2ae35) & 0xFFFFFFFF
+    h ^= (h >> 16)
+    return hex(h)[2:]
+
+# CRC32 (sử dụng zlib - module có sẵn)
+def custom_crc32(s):
+    crc = zlib.crc32(s.encode('utf-8')) & 0xffffffff
+    return hex(crc)[2:]
+
+def generate_hash(md5_input, salt="TAIXIU_2025"):
+    # --- Các hàm băm chuẩn từ module hashlib ---
+    sha256         = hashlib.sha256(md5_input.encode('utf-8')).hexdigest()
+    sha3_256       = hashlib.sha3_256(md5_input.encode('utf-8')).hexdigest()
+    blake2b        = hashlib.blake2b(md5_input.encode('utf-8')).hexdigest()  # mặc định 512 bit
+    sha512         = hashlib.sha512(md5_input.encode('utf-8')).hexdigest()
+    blake2s        = hashlib.blake2s(md5_input.encode('utf-8')).hexdigest()
+    sha1           = hashlib.sha1(md5_input.encode('utf-8')).hexdigest()
+    sha384         = hashlib.sha384(md5_input.encode('utf-8')).hexdigest()
+    sha3_512       = hashlib.sha3_512(md5_input.encode('utf-8')).hexdigest()
+    sha224         = hashlib.sha224(md5_input.encode('utf-8')).hexdigest()
+    sha3_224       = hashlib.sha3_224(md5_input.encode('utf-8')).hexdigest()
+    sha3_384       = hashlib.sha3_384(md5_input.encode('utf-8')).hexdigest()
+    blake2b_512    = hashlib.blake2b(md5_input.encode('utf-8'), digest_size=64).hexdigest()
+    blake2b_256    = hashlib.blake2b(md5_input.encode('utf-8'), digest_size=32).hexdigest()
     
-    # Các biến thể MD5
-    md5_double = hashlib.md5(md5_input.encode('utf-8')).hexdigest()
-    md5_triple = hashlib.md5(md5_double.encode('utf-8')).hexdigest()
-    sha512_md5 = hashlib.sha512(md5_input.encode('utf-8')).hexdigest()
+    # --- Các biến thể MD5 theo chuỗi cải tiến ---
+    md5_single     = hashlib.md5(md5_input.encode('utf-8')).hexdigest()
+    md5_double     = hashlib.md5(md5_single.encode('utf-8')).hexdigest()
+    md5_triple     = hashlib.md5(md5_double.encode('utf-8')).hexdigest()
+    md5_quadruple  = hashlib.md5(md5_triple.encode('utf-8')).hexdigest()
+    md5_quintuple  = hashlib.md5(md5_quadruple.encode('utf-8')).hexdigest()
+    
+    sha512_md5     = hashlib.sha512(md5_input.encode('utf-8')).hexdigest()
     sha256_blake2b = hashlib.sha256(blake2b.encode('utf-8')).hexdigest()
-    sha3_mix = hashlib.sha3_512((sha256 + sha3_256 + sha1).encode('utf-8')).hexdigest()
+    sha3_mix       = hashlib.sha3_512((sha256 + sha3_256 + sha1).encode('utf-8')).hexdigest()
     
-    # Shake (đầu ra cố định)
-    shake_128 = hashlib.shake_128(md5_input.encode('utf-8')).hexdigest(16)
-    shake_256 = hashlib.shake_256(md5_input.encode('utf-8')).hexdigest(32)
+    # --- Shake với đầu ra cố định ---
+    shake_128      = hashlib.shake_128(md5_input.encode('utf-8')).hexdigest(16)
+    shake_256      = hashlib.shake_256(md5_input.encode('utf-8')).hexdigest(32)
     
     # Mô phỏng SHA512-224 và SHA512-256 từ SHA-512
-    sha512_224 = sha512[:56]  # 224 bit => 56 hex digits
-    sha512_256 = sha512[:64]  # 256 bit => 64 hex digits
+    sha512_224     = sha512[:56]  # 224 bit => 56 hex digits
+    sha512_256     = sha512[:64]  # 256 bit => 64 hex digits
     
-    # Các hàm băm phụ trợ (Extra Hashes)
+    # --- Các hàm băm phụ trợ (Extra Hashes) ---
     extra_hash1  = hashlib.sha256((sha256 + sha3_256 + sha1).encode('utf-8')).hexdigest()
     extra_hash2  = hashlib.sha512((blake2b + sha512 + sha384).encode('utf-8')).hexdigest()
     extra_hash3  = hashlib.md5((blake2s + sha1 + md5_input).encode('utf-8')).hexdigest()
@@ -48,20 +139,44 @@ def generate_hash(md5_input):
     extra_hash10 = hashlib.sha3_256((sha256 + sha384 + sha512).encode('utf-8')).hexdigest()
     extra_hash11 = hashlib.sha256((extra_hash8 + extra_hash9).encode('utf-8')).hexdigest()
     extra_hash12 = hashlib.sha3_384((extra_hash10 + sha256_blake2b).encode('utf-8')).hexdigest()
+    extra_hash13 = hashlib.sha256((md5_single + sha3_mix).encode('utf-8')).hexdigest()
+    extra_hash14 = hashlib.sha3_512((shake_128 + shake_256).encode('utf-8')).hexdigest()
     
-    # Base64 của đầu vào
+    # --- Các hàm băm nâng cao từ module ---
+    hmac_sha256    = hmac.new(salt.encode('utf-8'), md5_input.encode('utf-8'), hashlib.sha256).hexdigest()
+    pbkdf2_sha256  = hashlib.pbkdf2_hmac('sha256', md5_input.encode('utf-8'), salt.encode('utf-8'), 100000).hex()
+    scrypt_hash    = hashlib.scrypt(md5_input.encode('utf-8'), salt=salt.encode('utf-8'), n=16384, r=8, p=1, dklen=64).hex()
+    
+    # --- Base64 của đầu vào ---
     base64_hash = base64.b64encode(md5_input.encode('utf-8')).decode('utf-8')
     
-    # Kết hợp tất cả các giá trị hash
-    combined_hash = (md5_input + sha256 + sha3_256 + blake2b + sha512 + blake2s + sha1 + sha384 +
-                     sha3_512 + sha224 + sha3_224 + sha3_384 + blake2b_512 + blake2b_256 +
-                     md5_double + md5_triple + sha512_md5 + sha256_blake2b + sha3_mix +
-                     shake_128 + shake_256 + sha512_224 + sha512_256 +
-                     extra_hash1 + extra_hash2 + extra_hash3 + extra_hash4 + extra_hash5 +
-                     extra_hash6 + extra_hash7 + extra_hash8 + extra_hash9 + extra_hash10 +
-                     extra_hash11 + extra_hash12 + base64_hash)
+    # --- Các hàm băm tự chế đã có và nâng cao mới ---
+    custom_hash_djb2     = custom_djb2(md5_input)
+    custom_hash_sdbm     = custom_sdbm(md5_input)
+    custom_hash_fnv1a    = custom_fnv1a(md5_input)
+    custom_hash_adler32  = custom_adler32(md5_input)
+    custom_hash_murmur3  = custom_murmur3(md5_input)
+    custom_hash_crc32    = custom_crc32(md5_input)
     
-    # Tạo final_hash qua MD5 của chuỗi kết hợp, sau đó thực hiện nhiều vòng lặp mix với SHA-256 và MD5
+    # --- Kết hợp tất cả các giá trị hash (nối thành chuỗi) ---
+    hash_list = [
+        md5_input, sha256, sha3_256, blake2b, sha512, blake2s, sha1, sha384,
+        sha3_512, sha224, sha3_224, sha3_384, blake2b_512, blake2b_256,
+        md5_single, md5_double, md5_triple, md5_quadruple, md5_quintuple,
+        sha512_md5, sha256_blake2b, sha3_mix,
+        shake_128, shake_256, sha512_224, sha512_256,
+        extra_hash1, extra_hash2, extra_hash3, extra_hash4, extra_hash5,
+        extra_hash6, extra_hash7, extra_hash8, extra_hash9, extra_hash10,
+        extra_hash11, extra_hash12, extra_hash13, extra_hash14,
+        hmac_sha256, pbkdf2_sha256, scrypt_hash,
+        base64_hash,
+        custom_hash_djb2, custom_hash_sdbm,
+        custom_hash_fnv1a, custom_hash_adler32,
+        custom_hash_murmur3, custom_hash_crc32
+    ]
+    combined_hash = "".join(hash_list)
+    
+    # --- Tạo final_hash với vòng lặp mix bổ sung ---
     final_hash = hashlib.md5(combined_hash.encode('utf-8')).hexdigest()
     for i in range(10):
         final_hash = hashlib.sha256(final_hash.encode('utf-8')).hexdigest()
@@ -70,6 +185,7 @@ def generate_hash(md5_input):
     
     hash_details = {
         "MD5 Input": md5_input,
+        "Salt": salt,
         "SHA-256": sha256,
         "SHA3-256": sha3_256,
         "BLAKE2b": blake2b,
@@ -83,11 +199,14 @@ def generate_hash(md5_input):
         "SHA3-384": sha3_384,
         "BLAKE2b-512": blake2b_512,
         "BLAKE2b-256": blake2b_256,
+        "MD5 Single": md5_single,
         "MD5 Double": md5_double,
         "MD5 Triple": md5_triple,
-        "SHA-512 (MD5 Input)": sha512_md5,
-        "SHA-256 (BLAKE2b)": sha256_blake2b,
-        "SHA3 Mixed": sha3_mix,
+        "MD5 Quadruple": md5_quadruple,
+        "MD5 Quintuple": md5_quintuple,
+        "SHA512-MD5": sha512_md5,
+        "SHA256-BLAKE2b": sha256_blake2b,
+        "SHA3 Mix": sha3_mix,
         "SHAKE-128": shake_128,
         "SHAKE-256": shake_256,
         "SHA512-224 (simulated)": sha512_224,
@@ -104,92 +223,46 @@ def generate_hash(md5_input):
         "Extra Hash 10": extra_hash10,
         "Extra Hash 11": extra_hash11,
         "Extra Hash 12": extra_hash12,
+        "Extra Hash 13": extra_hash13,
+        "Extra Hash 14": extra_hash14,
+        "HMAC-SHA256": hmac_sha256,
+        "PBKDF2-HMAC-SHA256": pbkdf2_sha256,
+        "Scrypt": scrypt_hash,
         "Base64 Encoding": base64_hash,
+        "Custom DJB2": custom_hash_djb2,
+        "Custom SDBM": custom_hash_sdbm,
+        "Custom FNV-1a": custom_hash_fnv1a,
+        "Custom Adler-32": custom_hash_adler32,
+        "Custom Murmur3": custom_hash_murmur3,
+        "Custom CRC32": custom_hash_crc32,
         "Final Hash": final_hash
     }
     return final_hash, hash_details
 
 def predict_tai_xiu(final_hash):
+    # Dự đoán Tài/Xỉu dựa trên tổng các ký tự hex của final_hash (cho kết quả trong khoảng 3-18)
     hex_digits = [int(c, 16) for c in final_hash]
-    total = sum(hex_digits) % 18 + 3  
+    total = sum(hex_digits) % 16 + 3
     return "Tài" if total >= 11 else "Xỉu"
+
+def calculate_win_rate(final_hash):
+    # Tính win rate dưới dạng phần trăm (0-100%) dựa trên final_hash
+    win_rate = int(final_hash, 16) % 101
+    return win_rate
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
+    prediction = None
+    input_data = ""
+    final_hash = ""
+    hash_details = {}
+    win_rate = None
     if request.method == 'POST':
         input_data = request.form['input_data']
-        final_hash = generate_hash(input_data)
+        final_hash, hash_details = generate_hash(input_data)
         prediction = predict_tai_xiu(final_hash)
-    else:
-        input_data, final_hash, prediction = "", "", ""
-
-    return f"""
-    <html>
-    <head>
-        <title>Dự Đoán Tài Xỉu MD5</title>
-        <style>
-            body {{
-                font-family: Arial, sans-serif;
-                background-color: #f4f4f4;
-                text-align: center;
-                padding: 30px;
-            }}
-            .container {{
-                width: 50%;
-                background: white;
-                padding: 20px;
-                border-radius: 10px;
-                box-shadow: 0px 4px 8px rgba(0,0,0,0.2);
-                margin: auto;
-            }}
-            input {{
-                width: 80%;
-                padding: 10px;
-                margin: 10px 0;
-                border: 1px solid #ccc;
-                border-radius: 5px;
-            }}
-            button {{
-                background: #28a745;
-                color: white;
-                padding: 10px 20px;
-                border: none;
-                border-radius: 5px;
-                cursor: pointer;
-                font-size: 16px;
-            }}
-            button:hover {{
-                background: #218838;
-            }}
-            .result {{
-                font-size: 20px;
-                font-weight: bold;
-                margin-top: 20px;
-                padding: 10px;
-                border-radius: 5px;
-                display: inline-block;
-                color: white;
-            }}
-            .tai {{ background-color: #ff5722; }}
-            .xiu {{ background-color: #2196F3; }}
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <h1>Dự Đoán Tài Xỉu MD5</h1>
-            <form method="post">
-                <input type="text" name="input_data" placeholder="Nhập MD5" required>
-                <button type="submit">Dự Đoán</button>
-            </form>
-            <div class="result {'tai' if prediction == 'Tài' else 'xiu'}">
-                {f"Kết Quả: {prediction}" if prediction else ""}
-            </div>
-            <p><b>MD5 Nhập:</b> {input_data}</p>
-            <p><b>Final Hash:</b> {final_hash}</p>
-        </div>
-    </body>
-    </html>
-    """
+        win_rate = calculate_win_rate(final_hash)
+    return render_template('index.html', prediction=prediction, input_data=input_data, final_hash=final_hash, hash_details=hash_details, win_rate=win_rate)
 
 if __name__ == '__main__':
     app.run(debug=True)
