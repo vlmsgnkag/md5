@@ -163,6 +163,49 @@ def custom_bitmix_hash(s):
         h &= 0xFFFFFFFFFFFFFFFF
     return hex(h)[2:]
 
+def custom_polynomial_hash(s, base=257, mod=(1 << 64) - 59):
+    """
+    Hàm băm theo đa thức (Polynomial Rolling Hash):
+    - Sử dụng cơ số (base) và modulo (mod) để tính toán.
+    - Công thức: hash = (hash * base + ord(c)) % mod cho mỗi ký tự.
+    - Chọn base và mod sao cho kết quả có phạm vi lớn, tạo ra sự phân tán tốt.
+    """
+    h = 0
+    for c in s:
+        h = (h * base + ord(c)) % mod
+    return hex(h)[2:]
+
+
+def custom_rotate_add_hash(s):
+    """
+    Hàm băm sử dụng xoay bit và cộng dồn:
+    - Bắt đầu với h = 0.
+    - Với mỗi ký tự, xoay trái h 5 bit (trong không gian 64-bit) rồi cộng giá trị của ký tự.
+    - Kết quả được giới hạn trong 64-bit.
+    """
+    h = 0
+    for c in s:
+        # Xoay trái 5 bit trong không gian 64-bit
+        h = ((h << 5) | (h >> (64 - 5))) & 0xFFFFFFFFFFFFFFFF
+        h = (h + ord(c)) & 0xFFFFFFFFFFFFFFFF
+    return hex(h)[2:]
+
+
+def custom_prime_mix_hash(s):
+    """
+    Hàm băm kết hợp với các số nguyên tố:
+    - Duyệt từng ký tự của chuỗi và nhân giá trị hash với một số nguyên tố thay đổi theo vị trí.
+    - Các số nguyên tố được lấy từ một danh sách cố định để tạo sự “xáo trộn” và phân tán.
+    - Kết quả được giới hạn trong 64-bit.
+    """
+    primes = [31, 37, 41, 43, 47, 53, 59, 61]  # Danh sách các số nguyên tố nhỏ
+    h = 0
+    for i, c in enumerate(s):
+        prime = primes[i % len(primes)]
+        h = (h * prime + ord(c)) & 0xFFFFFFFFFFFFFFFF
+    return hex(h)[2:]
+
+
 # --- Hàm tạo hash tổng hợp ---
 def generate_hash(md5_input, salt="TAIXIU_MD5"):
     # Các hàm băm chuẩn từ module hashlib
@@ -228,6 +271,9 @@ def generate_hash(md5_input, salt="TAIXIU_MD5"):
     custom_hash_sdbm     = custom_sdbm(md5_input)
     custom_hash_fnv1a    = custom_fnv1a(md5_input)
     custom_hash_adler32  = custom_adler32(md5_input)
+    custom_polynomial_hash  = custom_adler32(md5_input)
+    custom_rotate_add_hash  = custom_adler32(md5_input)
+    custom_prime_mix_hash  = custom_adler32(md5_input)
     custom_hash_murmur3  = custom_murmur3(md5_input)
     custom_hash_crc32    = custom_crc32(md5_input)
     
@@ -241,7 +287,7 @@ def generate_hash(md5_input, salt="TAIXIU_MD5"):
         md5_input, sha256, sha3_256, blake2b, sha512, blake2s, sha1, sha384,
         sha3_512, sha224, sha3_224, sha3_384, blake2b_512, blake2b_256,
         md5_single, md5_double, md5_triple, md5_quadruple, md5_quintuple,
-        sha512_md5, sha256_blake2b, sha3_mix,
+        sha512_md5, custom_prime_mix_hash, sha256_blake2b, sha3_mix,
         shake_128, shake_256, sha512_224, sha512_256,
         extra_hash1, extra_hash2, extra_hash3, extra_hash4, extra_hash5,
         extra_hash6, extra_hash7, extra_hash8, extra_hash9, extra_hash10,
@@ -251,7 +297,8 @@ def generate_hash(md5_input, salt="TAIXIU_MD5"):
         custom_hash_djb2, custom_hash_sdbm,
         custom_hash_fnv1a, custom_hash_adler32,
         custom_hash_murmur3, custom_hash_crc32,
-        custom_hash_xor_shift, custom_hash_chaos, custom_hash_bitmix
+        custom_hash_xor_shift, custom_hash_chaos, custom_hash_bitmix, custom_rotate_add_hash, 
+        custom_polynomial_hash
     ]
     combined_hash = "".join(hash_list)
     
