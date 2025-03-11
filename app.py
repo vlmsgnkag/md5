@@ -8,7 +8,7 @@ import os
 app = Flask(__name__)
 
 # --- Hàm MD5 nâng cao ---
-def md5_hash(input_str, iterations=10, salt="bigSmallMD5"):
+def md5_hash(input_str, iterations=20, salt="TAIXIU_MD5"):
     """
     Hàm băm MD5 nâng cao:
     - Ghép salt vào chuỗi đầu vào
@@ -17,8 +17,18 @@ def md5_hash(input_str, iterations=10, salt="bigSmallMD5"):
     combined = input_str + salt
     result = hashlib.md5(combined.encode('utf-8')).hexdigest()
     for i in range(iterations):
-        result = hashlib.md5(result.encode('utf-8')).hexdigest()
-    return result
+        # Tạo salt phụ dựa trên số vòng lặp
+        iter_salt = hashlib.md5((salt + str(i)).encode('utf-8')).digest()
+        # Thực hiện XOR giữa result và iter_salt
+        mixed = bytes(a ^ b for a, b in zip(result, iter_salt))
+        # Băm lại kết quả đã trộn
+        result = hashlib.md5(mixed).digest()
+        # Xoay trái 3 bit để thêm bước "xáo trộn" bit
+        int_val = int.from_bytes(result, 'big')
+        int_val = ((int_val << 3) | (int_val >> (128 - 3))) & ((1 << 128) - 1)
+        result = int_val.to_bytes(16, 'big')
+    
+    return result.hex()
 
 # --- Các hàm băm tự chế đã có ---
 def custom_djb2(s):
@@ -137,7 +147,7 @@ def custom_bitmix_hash(s):
     return hex(h)[2:]
 
 # --- Hàm tạo hash tổng hợp ---
-def generate_hash(md5_input, salt="TAIXIU_2025"):
+def generate_hash(md5_input, salt="TAIXIU_MD5"):
     # Các hàm băm chuẩn từ module hashlib
     sha256         = hashlib.sha256(md5_input.encode('utf-8')).hexdigest()
     sha3_256       = hashlib.sha3_256(md5_input.encode('utf-8')).hexdigest()
