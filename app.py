@@ -3,7 +3,7 @@ import hashlib
 import base64
 import hmac
 import zlib
-const port = process.env.PORT || 4000;
+
 
 app = Flask(__name__)
 
@@ -266,4 +266,6 @@ def index():
     return render_template('index.html', prediction=prediction, input_data=input_data, final_hash=final_hash, hash_details=hash_details, win_rate=win_rate)
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    import os
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port, debug=True)
