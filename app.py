@@ -3,11 +3,24 @@ import hashlib
 import base64
 import hmac
 import zlib
-
+import os
 
 app = Flask(__name__)
 
-# --- Các hàm băm tự chế cũ ---
+# --- Hàm MD5 nâng cao ---
+def md5_hash(input_str, iterations=10, salt="TAIXIU_MD5"):
+    """
+    Hàm băm MD5 nâng cao:
+    - Ghép salt vào chuỗi đầu vào
+    - Thực hiện MD5 theo nhiều vòng lặp để “tinh chỉnh” kết quả
+    """
+    combined = input_str + salt
+    result = hashlib.md5(combined.encode('utf-8')).hexdigest()
+    for i in range(iterations):
+        result = hashlib.md5(result.encode('utf-8')).hexdigest()
+    return result
+
+# --- Các hàm băm tự chế đã có ---
 def custom_djb2(s):
     hash_val = 5381
     for c in s:
@@ -20,17 +33,15 @@ def custom_sdbm(s):
         hash_val = ord(c) + (hash_val << 6) + (hash_val << 16) - hash_val
     return hex(hash_val & 0xFFFFFFFFFFFFFFFF)[2:]
 
-# Hàm băm FNV-1a (64-bit)
 def custom_fnv1a(s):
     hash_val = 14695981039346656037
     fnv_prime = 1099511628211
     for byte in s.encode('utf-8'):
         hash_val ^= byte
         hash_val *= fnv_prime
-        hash_val &= 0xFFFFFFFFFFFFFFFF  # giới hạn 64-bit
+        hash_val &= 0xFFFFFFFFFFFFFFFF
     return hex(hash_val)[2:]
 
-# Hàm băm Adler-32 tự chế
 def custom_adler32(s):
     a = 1
     b = 0
@@ -41,8 +52,7 @@ def custom_adler32(s):
     result = (b << 16) | a
     return hex(result)[2:]
 
-# --- Bổ sung các hàm băm nâng cao mới ---
-# MurmurHash3 (x86, 32-bit) thuần Python
+# --- Các hàm băm nâng cao tự chế đã có ---
 def custom_murmur3(s, seed=0):
     key = bytearray(s.encode('utf-8'))
     length = len(key)
@@ -52,7 +62,6 @@ def custom_murmur3(s, seed=0):
     c1 = 0xcc9e2d51
     c2 = 0x1b873593
 
-    # body
     for i in range(nblocks):
         k = key[i*4] | (key[i*4+1] << 8) | (key[i*4+2] << 16) | (key[i*4+3] << 24)
         k = (k * c1) & 0xFFFFFFFF
@@ -63,7 +72,6 @@ def custom_murmur3(s, seed=0):
         h = ((h << 13) | (h >> (32-13))) & 0xFFFFFFFF
         h = (h * 5 + 0xe6546b64) & 0xFFFFFFFF
 
-    # tail
     tail_index = nblocks * 4
     k = 0
     tail_size = length & 3
@@ -78,7 +86,6 @@ def custom_murmur3(s, seed=0):
         k = (k * c2) & 0xFFFFFFFF
         h ^= k
 
-    # finalization
     h ^= length
     h ^= (h >> 16)
     h = (h * 0x85ebca6b) & 0xFFFFFFFF
@@ -87,16 +94,54 @@ def custom_murmur3(s, seed=0):
     h ^= (h >> 16)
     return hex(h)[2:]
 
-# CRC32 (sử dụng zlib - module có sẵn)
 def custom_crc32(s):
     crc = zlib.crc32(s.encode('utf-8')) & 0xffffffff
     return hex(crc)[2:]
 
+# --- Các hàm băm tự chế "xịn" mới ---
+def custom_xor_shift_hash(s):
+    """
+    Hàm băm sử dụng kỹ thuật XOR và bit-shift.
+    """
+    h = 0xA5A5A5A5A5A5A5A5
+    for c in s:
+        h ^= ord(c)
+        # Thực hiện xoay trái 13 bit
+        h = ((h << 13) | (h >> (64-13))) & 0xFFFFFFFFFFFFFFFF
+        h *= 0x100000001B3  # sử dụng hằng số FNV prime (64-bit)
+        h &= 0xFFFFFFFFFFFFFFFF
+    return hex(h)[2:]
+
+def custom_chaos_hash(s):
+    """
+    Hàm băm dựa trên logistic map (hàm hỗn loạn).
+    """
+    x = 0.5
+    for c in s:
+        x = 4 * x * (1 - x)  # logistic map
+        x += ord(c) / 256.0
+        x %= 1.0
+    h = int(x * (2**64))
+    return hex(h)[2:]
+
+def custom_bitmix_hash(s):
+    """
+    Hàm băm sử dụng xoay bit và nhân với hằng số độc đáo.
+    """
+    h = 0xDEADBEEFCAFEBABE
+    for c in s:
+        h = ((h << 5) | (h >> (64-5))) & 0xFFFFFFFFFFFFFFFF
+        h ^= ord(c)
+        h *= 0x27d4eb2f165667c5
+        h &= 0xFFFFFFFFFFFFFFFF
+    return hex(h)[2:]
+
+# --- Hàm tạo hash tổng hợp ---
 def generate_hash(md5_input, salt="TAIXIU_2025"):
-    # --- Các hàm băm chuẩn từ module hashlib ---
+    # Các hàm băm chuẩn từ module hashlib
     sha256         = hashlib.sha256(md5_input.encode('utf-8')).hexdigest()
     sha3_256       = hashlib.sha3_256(md5_input.encode('utf-8')).hexdigest()
-    blake2b        = hashlib.blake2b(md5_input.encode('utf-8')).hexdigest()  # mặc định 512 bit
+    blake2b        = hashlib.blake2b(md5_input.encode('utf-8')).hexdigest()
     sha512         = hashlib.sha512(md5_input.encode('utf-8')).hexdigest()
     blake2s        = hashlib.blake2s(md5_input.encode('utf-8')).hexdigest()
     sha1           = hashlib.sha1(md5_input.encode('utf-8')).hexdigest()
@@ -108,7 +153,7 @@ def generate_hash(md5_input, salt="TAIXIU_2025"):
     blake2b_512    = hashlib.blake2b(md5_input.encode('utf-8'), digest_size=64).hexdigest()
     blake2b_256    = hashlib.blake2b(md5_input.encode('utf-8'), digest_size=32).hexdigest()
     
-    # --- Các biến thể MD5 theo chuỗi cải tiến ---
+    # Biến thể MD5 theo chuỗi cải tiến
     md5_single     = hashlib.md5(md5_input.encode('utf-8')).hexdigest()
     md5_double     = hashlib.md5(md5_single.encode('utf-8')).hexdigest()
     md5_triple     = hashlib.md5(md5_double.encode('utf-8')).hexdigest()
@@ -119,15 +164,15 @@ def generate_hash(md5_input, salt="TAIXIU_2025"):
     sha256_blake2b = hashlib.sha256(blake2b.encode('utf-8')).hexdigest()
     sha3_mix       = hashlib.sha3_512((sha256 + sha3_256 + sha1).encode('utf-8')).hexdigest()
     
-    # --- Shake với đầu ra cố định ---
+    # Shake với đầu ra cố định
     shake_128      = hashlib.shake_128(md5_input.encode('utf-8')).hexdigest(16)
     shake_256      = hashlib.shake_256(md5_input.encode('utf-8')).hexdigest(32)
     
     # Mô phỏng SHA512-224 và SHA512-256 từ SHA-512
-    sha512_224     = sha512[:56]  # 224 bit => 56 hex digits
-    sha512_256     = sha512[:64]  # 256 bit => 64 hex digits
+    sha512_224     = sha512[:56]
+    sha512_256     = sha512[:64]
     
-    # --- Các hàm băm phụ trợ (Extra Hashes) ---
+    # Các hàm băm phụ trợ (Extra Hashes)
     extra_hash1  = hashlib.sha256((sha256 + sha3_256 + sha1).encode('utf-8')).hexdigest()
     extra_hash2  = hashlib.sha512((blake2b + sha512 + sha384).encode('utf-8')).hexdigest()
     extra_hash3  = hashlib.md5((blake2s + sha1 + md5_input).encode('utf-8')).hexdigest()
@@ -143,21 +188,26 @@ def generate_hash(md5_input, salt="TAIXIU_2025"):
     extra_hash13 = hashlib.sha256((md5_single + sha3_mix).encode('utf-8')).hexdigest()
     extra_hash14 = hashlib.sha3_512((shake_128 + shake_256).encode('utf-8')).hexdigest()
     
-    # --- Các hàm băm nâng cao từ module ---
+    # Các hàm băm nâng cao từ module
     hmac_sha256    = hmac.new(salt.encode('utf-8'), md5_input.encode('utf-8'), hashlib.sha256).hexdigest()
     pbkdf2_sha256  = hashlib.pbkdf2_hmac('sha256', md5_input.encode('utf-8'), salt.encode('utf-8'), 100000).hex()
     scrypt_hash    = hashlib.scrypt(md5_input.encode('utf-8'), salt=salt.encode('utf-8'), n=16384, r=8, p=1, dklen=64).hex()
     
-    # --- Base64 của đầu vào ---
+    # Base64 của đầu vào
     base64_hash = base64.b64encode(md5_input.encode('utf-8')).decode('utf-8')
     
-    # --- Các hàm băm tự chế đã có và nâng cao mới ---
+    # Các hàm băm tự chế đã có và nâng cao mới
     custom_hash_djb2     = custom_djb2(md5_input)
     custom_hash_sdbm     = custom_sdbm(md5_input)
     custom_hash_fnv1a    = custom_fnv1a(md5_input)
     custom_hash_adler32  = custom_adler32(md5_input)
     custom_hash_murmur3  = custom_murmur3(md5_input)
     custom_hash_crc32    = custom_crc32(md5_input)
+    
+    # --- Các hàm băm tự chế "xịn" mới ---
+    custom_hash_xor_shift = custom_xor_shift_hash(md5_input)
+    custom_hash_chaos     = custom_chaos_hash(md5_input)
+    custom_hash_bitmix    = custom_bitmix_hash(md5_input)
     
     # --- Kết hợp tất cả các giá trị hash (nối thành chuỗi) ---
     hash_list = [
@@ -173,11 +223,16 @@ def generate_hash(md5_input, salt="TAIXIU_2025"):
         base64_hash,
         custom_hash_djb2, custom_hash_sdbm,
         custom_hash_fnv1a, custom_hash_adler32,
-        custom_hash_murmur3, custom_hash_crc32
+        custom_hash_murmur3, custom_hash_crc32,
+        custom_hash_xor_shift, custom_hash_chaos, custom_hash_bitmix
     ]
     combined_hash = "".join(hash_list)
     
-    # --- Tạo final_hash với vòng lặp mix bổ sung ---
+    # Sử dụng hàm md5_hash nâng cao để “tinh chỉnh” kết quả với salt TAIXIU_MD5
+    special_md5 = md5_hash(combined_hash, iterations=10, salt="TAIXIU_MD5")
+    combined_hash += special_md5  # Kết hợp thêm kết quả md5_hash đặc biệt
+    
+    # Tạo final_hash với vòng lặp mix bổ sung
     final_hash = hashlib.md5(combined_hash.encode('utf-8')).hexdigest()
     for i in range(10):
         final_hash = hashlib.sha256(final_hash.encode('utf-8')).hexdigest()
@@ -236,6 +291,10 @@ def generate_hash(md5_input, salt="TAIXIU_2025"):
         "Custom Adler-32": custom_hash_adler32,
         "Custom Murmur3": custom_hash_murmur3,
         "Custom CRC32": custom_hash_crc32,
+        "Custom XOR-Shift": custom_hash_xor_shift,
+        "Custom Chaos": custom_hash_chaos,
+        "Custom Bitmix": custom_hash_bitmix,
+        "Special MD5": special_md5,
         "Final Hash": final_hash
     }
     return final_hash, hash_details
@@ -247,7 +306,6 @@ def predict_tai_xiu(final_hash):
     return "Tài" if total >= 11 else "Xỉu"
 
 def calculate_win_rate(final_hash):
-    # Tính win rate dưới dạng phần trăm (0-100%) dựa trên final_hash
     win_rate = int(final_hash, 16) % 101
     return win_rate
 
@@ -266,6 +324,5 @@ def index():
     return render_template('index.html', prediction=prediction, input_data=input_data, final_hash=final_hash, hash_details=hash_details, win_rate=win_rate)
 
 if __name__ == '__main__':
-    import os
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port, debug=True)
