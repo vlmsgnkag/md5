@@ -15,7 +15,46 @@ def md5_hash(input_str, iterations=30, salt="TAIXIU_MD5"):
     - Thực hiện MD5 theo nhiều vòng lặp để “tinh chỉnh” kết quả
     """
     combined = input_str + salt
+
+    h_xor    = custom_xor_shift_hash(combined)
+    h_chaos  = custom_chaos_hash(combined)
+    h_bitmix = custom_bitmix_hash(combined)
+    h_rotate = custom_rotate_add_hash(combined)
+    h_prime  = custom_prime_mix_hash(combined)
+    
+    # Bước 3: Nối các hash lại với nhau
+    combined_hash = h_xor + h_chaos + h_bitmix + h_rotate + h_prime
+    
+    # Bước 4: Chuyển đổi thành bytearray để dễ thao tác bit
+    result_bytes = bytearray(combined_hash.encode('utf-8'))
+    
+    # Thực hiện 50 vòng lặp trộn nâng cao
+    for i in range(50):
+        # Tạo salt phụ cho vòng lặp hiện tại
+        iter_salt = bytearray((salt + str(i)).encode('utf-8'))
+        # Nếu độ dài của iter_salt không đủ, nhân bản cho đến đủ độ dài của result_bytes
+        if len(iter_salt) < len(result_bytes):
+            multiplier = (len(result_bytes) // len(iter_salt)) + 1
+            iter_salt = iter_salt * multiplier
+        iter_salt = iter_salt[:len(result_bytes)]
+        
+        # Trộn kết hợp bằng phép XOR với salt phụ
+        result_bytes = bytearray(a ^ b for a, b in zip(result_bytes, iter_salt))
+        
+        # Xoay trái từng byte với offset thay đổi (offset từ 1 đến 8)
+        offset = (i % 8) + 1
+        result_bytes = bytearray(((val << offset) | (val >> (8 - offset))) & 0xFF for val in result_bytes)
+        
+        # Cộng thêm offset modulo 256 để thêm sự xáo trộn
+        result_bytes = bytearray(( (val + offset) % 256 for val in result_bytes))
+    
+    # Bước 5: Chuyển kết quả cuối cùng về dạng chuỗi hex
+        final_hash = result_bytes.hex()
+        return final_hash
+
     result = hashlib.md5(combined.encode('utf-8')).digest()  # 16 bytes
+
+    
 
     for i in range(iterations):
         # Bước 2: Tạo hai salt phụ từ MD5 và SHA256, kết hợp chúng
@@ -205,6 +244,110 @@ def custom_prime_mix_hash(s):
         h = (h * prime + ord(c)) & 0xFFFFFFFFFFFFFFFF
     return hex(h)[2:]
 
+def custom_bkdr_hash(s):
+    """
+    BKDR Hash sử dụng cơ số 131 với bước avalanche bổ sung.
+    """
+    hash_val = 0
+    seed = 131
+    for c in s:
+        hash_val = (hash_val * seed + ord(c)) & 0xFFFFFFFFFFFFFFFF
+    hash_val ^= (hash_val >> 13)
+    hash_val = (hash_val * 0x5bd1e995) & 0xFFFFFFFFFFFFFFFF
+    hash_val ^= (hash_val >> 15)
+    return hex(hash_val)[2:]
+
+
+def custom_shift_mix_hash(s):
+    """
+    Hàm băm kết hợp phép dịch bit và cộng với hằng số golden ratio.
+    """
+    h = 0xABCDEF1234567890
+    for c in s:
+        h ^= ord(c)
+        h = ((h << 7) | (h >> (64-7))) & 0xFFFFFFFFFFFFFFFF
+        h = (h + 0x9e3779b97f4a7c15) & 0xFFFFFFFFFFFFFFFF
+        h ^= (h >> 3)
+    return hex(h)[2:]
+
+
+def custom_feistel_hash(s):
+    """
+    Hàm băm kiểu Feistel network:
+    - Chia chuỗi thành hai nửa, sau đó thực hiện 4 vòng Feistel để trộn lẫn dữ liệu.
+    """
+    if len(s) % 2 != 0:
+        s += s[-1]
+    mid = len(s) // 2
+    left = [ord(c) for c in s[:mid]]
+    right = [ord(c) for c in s[mid:]]
+    rounds = 4
+    for _ in range(rounds):
+        new_right = []
+        for i in range(len(right)):
+            # Hàm F đơn giản: kết hợp nhân và dịch bit
+            f = ((right[i] * 0x45d9f3b) & 0xFFFFFFFF) ^ (right[i] >> 3)
+            new_val = left[i] ^ f
+            new_right.append(new_val & 0xFF)
+        left, right = right, new_right
+    combined = left + right
+    result = 0
+    for val in combined:
+        result = ((result << 8) | val) & 0xFFFFFFFFFFFFFFFF
+    result ^= (result >> 33)
+    result = (result * 0xff51afd7ed558ccd) & 0xFFFFFFFFFFFFFFFF
+    result ^= (result >> 33)
+    return hex(result)[2:]
+
+def custom_entropy_hash(s):
+    """
+    Hàm băm dựa trên sự pha trộn của hàm lượng giác để tạo “entropy”:
+    - Sử dụng sin, cos của các giá trị kết hợp với chỉ số để tạo giá trị số học lớn.
+    """
+    import math
+    h = 0xABCDEF1234567890
+    for i, c in enumerate(s):
+        # Sử dụng sin và cos tạo giá trị dao động, cộng thêm offset theo index
+        value = math.sin(ord(c) + i) + math.cos(ord(c) * (i + 1))
+        # Chuyển đổi thành số nguyên sau khi scale (đảm bảo dương bằng cách cộng 2)
+        h ^= int((value + 2) * 1000000)
+        # Xoay trái theo offset phụ thuộc vào vị trí
+        offset = (i % 16) + 1
+        h = ((h << offset) | (h >> (64 - offset))) & 0xFFFFFFFFFFFFFFFF
+        h = (h * 0x9e3779b97f4a7c15) & 0xFFFFFFFFFFFFFFFF
+    h ^= (h >> 31)
+    return hex(h)[2:]
+
+def custom_rotational_mix_hash2(s):
+    """
+    Hàm băm sử dụng xoay bit với offset thay đổi theo index và cộng dồn:
+    - Sử dụng hằng số khác với custom_rotate_add_hash để tăng sự khác biệt.\n
+    """
+    h = 0xFEDCBA9876543210
+    for i, c in enumerate(s):
+        offset = (i % 7) + 1
+        h = ((h << offset) | (h >> (64 - offset))) & 0xFFFFFFFFFFFFFFFF
+        h ^= (ord(c) * (i + 1))
+        h = (h + 0xC6A4A7935BD1E995) & 0xFFFFFFFFFFFFFFFF
+    h ^= (h >> 27)
+    return hex(h)[2:]
+
+def custom_dynamic_prime_hash(s):
+    """
+    Hàm băm sử dụng dãy số nguyên tố động:
+    - Sử dụng một dãy số nguyên tố cố định, thay đổi theo index, và kết hợp với phép XOR.\n
+    """
+    primes = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31]
+    h = 1
+    for i, c in enumerate(s):
+        prime = primes[i % len(primes)]
+        h = (h * prime + ord(c) * prime) & 0xFFFFFFFFFFFFFFFF
+        h ^= (h >> 5)
+    h ^= (h << 3) & 0xFFFFFFFFFFFFFFFF
+    return hex(h)[2:]
+
+
+
 
 # --- Hàm tạo hash tổng hợp ---
 def generate_hash(md5_input, salt="TAIXIU_MD5"):
@@ -280,6 +423,12 @@ def generate_hash(md5_input, salt="TAIXIU_MD5"):
     # --- Các hàm băm tự chế "xịn" mới ---
     custom_hash_xor_shift = custom_xor_shift_hash(md5_input)
     custom_hash_chaos     = custom_chaos_hash(md5_input)
+    custom_hash_bkdr      = custom_bkdr_hash(md5_input)
+    custom_hash_shift_mix = custom_shift_mix_hash(md5_input)
+    custom_hash_feistel   = custom_feistel_hash(md5_input)
+    custom_entropy         = custom_entropy_hash(md5_input)
+    custom_rot_mix2        = custom_rotational_mix_hash2(md5_input)
+    custom_dyn_prime       = custom_dynamic_prime_hash(md5_input)
     custom_hash_bitmix    = custom_bitmix_hash(md5_input)
     
     # --- Kết hợp tất cả các giá trị hash (nối thành chuỗi) ---
@@ -292,10 +441,11 @@ def generate_hash(md5_input, salt="TAIXIU_MD5"):
         extra_hash1, extra_hash2, extra_hash3, extra_hash4, extra_hash5,
         extra_hash6, extra_hash7, extra_hash8, extra_hash9, extra_hash10,
         extra_hash11, extra_hash12, extra_hash13, extra_hash14,
-        hmac_sha256, pbkdf2_sha256, scrypt_hash,
-        base64_hash,
+        hmac_sha256, pbkdf2_sha256, scrypt_hash, custom_hash_feistel,
+        base64_hash, custom_hash_bkdr, custom_hash_shift_mix,
         custom_hash_djb2, custom_hash_sdbm,
-        custom_hash_fnv1a, custom_hash_adler32,
+        custom_hash_fnv1a, custom_hash_adler32, custom_dyn_prime,
+        custom_rot_mix2, custom_entropy,
         custom_hash_murmur3, custom_hash_crc32,
         custom_hash_xor_shift, custom_hash_chaos, custom_hash_bitmix, custom_rotate_add_hash, 
         custom_polynomial_hash
@@ -386,6 +536,43 @@ def calculate_win_rate(final_hash):
     win_rate = int(final_hash, 16) % 101
     return win_rate
 
+
+# --- Chức năng so sánh hash của dãy số 3 tới 18 ---
+def similarity_ratio(hash1, hash2):
+    """
+    Tính tỷ lệ trùng khớp giữa 2 chuỗi hash (theo từng ký tự so sánh vị trí).
+    Kết quả là số thực từ 0 đến 1.
+    """
+    matches = sum(1 for a, b in zip(hash1, hash2) if a == b)
+    ratio = matches / min(len(hash1), len(hash2))
+    return ratio
+
+def predict_with_range(final_hash):
+    best_ratio = 0.0
+    best_candidates = []  # Danh sách chứa tất cả các số đạt tỷ lệ tương đồng tốt nhất
+    candidate_hashes = {}
+    for num in range(3, 19):
+        candidate_hash, candidate_details = generate_hash(str(num))
+        ratio = similarity_ratio(final_hash, candidate_hash)
+        # Lưu cả giá trị float và chuỗi định dạng (có dấu %)
+        candidate_hashes[str(num)] = {
+            "hash": candidate_hash,
+            "details": candidate_details,
+            "similarity": ratio,  # Giá trị float (0 đến 1)
+            "similarity_str": f"{ratio * 100:.2f}%"  # Chuỗi định dạng
+        }
+        if ratio > best_ratio:
+            best_ratio = ratio
+            best_candidates = [num]
+        elif ratio == best_ratio:
+            best_candidates.append(num)
+            
+    # Dự đoán dựa trên trung bình của các số đạt tỷ lệ tốt nhất
+    avg_candidate = sum(best_candidates) / len(best_candidates)
+    prediction = "Xỉu" if avg_candidate <= 10 else "Tài"
+    best_ratio_percent = f"{best_ratio * 100:.2f}%"
+    return best_candidates, best_ratio_percent, prediction, candidate_hashes
+
 @app.route('/', methods=['GET', 'POST'])
 def index():
     prediction = None
@@ -393,12 +580,20 @@ def index():
     final_hash = ""
     hash_details = {}
     win_rate = None
+    range_result = {}
     if request.method == 'POST':
         input_data = request.form['input_data']
         final_hash, hash_details = generate_hash(input_data)
         prediction = predict_tai_xiu(final_hash)
         win_rate = calculate_win_rate(final_hash)
-    return render_template('index.html', prediction=prediction, input_data=input_data, final_hash=final_hash, hash_details=hash_details, win_rate=win_rate)
+        best_candidate, best_ratio, range_prediction, candidate_hashes = predict_with_range(final_hash)
+        range_result = {
+            "Best Candidate": best_candidate,
+            "Similarity Ratio": best_ratio,
+            "Range Prediction": range_prediction,
+            "Candidate Hashes": candidate_hashes
+        }
+    return render_template('index.html', prediction=prediction, input_data=input_data, final_hash=final_hash, hash_details=hash_details, win_rate=win_rate, range_result=range_result)
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
