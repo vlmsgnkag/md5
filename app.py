@@ -1,8 +1,11 @@
+import time
 from flask import Flask, request, render_template
 import hashlib
 import base64
 import hmac
+import re
 import zlib
+import secrets
 import os
 
 app = Flask(__name__)
@@ -12,10 +15,9 @@ def md5_hash(input_str, iterations=50, salt="TAIXIU_MD5"):
     """
     Hàm băm MD5 nâng cao:
     - Ghép salt vào chuỗi đầu vào
-    - Thực hiện MD5 theo nhiều vòng lặp để “tinh chỉnh” kết quả
+    - Thực hiện nhiều vòng trộn để “tinh chỉnh” kết quả
     """
     combined = input_str + salt
-
     parts = [
          custom_xor_shift_hash(combined),
          custom_chaos_hash(combined),
@@ -44,36 +46,25 @@ def md5_hash(input_str, iterations=50, salt="TAIXIU_MD5"):
          custom_rsa_mod_hash(combined),
          custom_double_logistic_hash(combined)
     ]
-    
-    # Bước 3: Nối các hash lại với nhau
     combined_hash = "".join(parts)
-    
-    # Bước 4: Chuyển đổi thành bytearray để dễ thao tác bit
     result_bytes = bytearray(combined_hash.encode('utf-8'))
-    
-    # Thực hiện 50 vòng lặp trộn nâng cao
-    for i in range(50):
+    for i in range(iterations):
         # Tạo salt phụ cho vòng lặp hiện tại
         iter_salt = bytearray((salt + str(i)).encode('utf-8'))
-        # Nếu độ dài của iter_salt không đủ, nhân bản cho đến đủ độ dài của result_bytes
         if len(iter_salt) < len(result_bytes):
             multiplier = (len(result_bytes) // len(iter_salt)) + 1
             iter_salt = iter_salt * multiplier
         iter_salt = iter_salt[:len(result_bytes)]
-        
-        # Trộn kết hợp bằng phép XOR với salt phụ
+        # Trộn bằng phép XOR
         result_bytes = bytearray(a ^ b for a, b in zip(result_bytes, iter_salt))
-        
-        # Xoay trái từng byte với offset thay đổi (offset từ 1 đến 8)
+        # Xoay trái từng byte với offset thay đổi (1 đến 8)
         offset = (i % 8) + 1
         result_bytes = bytearray(((val << offset) | (val >> (8 - offset))) & 0xFF for val in result_bytes)
-        
-        # Cộng thêm offset modulo 256 để thêm sự xáo trộn
-        result_bytes = bytearray(( (val + offset) % 256 for val in result_bytes))
-    
-    # Bước 5: Chuyển kết quả cuối cùng về dạng chuỗi hex
+        # Cộng thêm offset modulo 256
+        result_bytes = bytearray(((val + offset) % 256) for val in result_bytes)
         final_hash = result_bytes.hex()
         return final_hash
+
 
     result = hashlib.md5(combined.encode('utf-8')).digest()  # 16 bytes
 
@@ -480,7 +471,25 @@ def custom_xor_rotate_mix_hash(s):
 
 
 # --- Hàm tạo hash tổng hợp ---
-def generate_hash(md5_input, salt="TAIXIU_MD5"):
+def generate_hash(md5_input, salt="TAIXIU_MD5", mode="ultra"):
+    # Nếu đầu vào khớp định dạng MD5 (32 ký tự hex) thì tăng cường xử lý
+    if re.fullmatch(r'[a-fA-F0-9]{32}', md5_input):
+        iterations = 100
+        enhanced_salt = salt + "_ENHANCED"
+        md5_input = md5_hash(md5_input, iterations=iterations, salt=enhanced_salt)
+    else:
+        iterations = 50
+        enhanced_salt = salt
+
+    # Lấy pepper từ biến môi trường (nếu không có, dùng mặc định)
+    pepper = os.environ.get("HASH_PEPPER", "DEFAULT_PEPPER")
+    # Yếu tố thời gian: nano giây hiện tại
+    time_factor = str(time.time_ns())
+    # Tạo random salt (16 byte dưới dạng hex)
+    random_salt = secrets.token_hex(16)
+    # Kết hợp các yếu tố để tạo final_salt
+    final_salt = enhanced_salt + pepper + time_factor + random_salt
+
     # Các hàm băm chuẩn từ module hashlib
     sha256         = hashlib.sha256(md5_input.encode('utf-8')).hexdigest()
     sha3_256       = hashlib.sha3_256(md5_input.encode('utf-8')).hexdigest()
@@ -593,7 +602,7 @@ def generate_hash(md5_input, salt="TAIXIU_MD5"):
     combined_hash = "".join(hash_list)
     
     # Sử dụng hàm md5_hash nâng cao để “tinh chỉnh” kết quả với salt TAIXIU_MD5
-    special_md5 = md5_hash(combined_hash, iterations=50, salt="TAIXIU_MD5")
+    special_md5 = md5_hash(combined_hash, iterations=iterations, salt=enhanced_salt)
     combined_hash += special_md5  # Kết hợp thêm kết quả md5_hash đặc biệt
     
     # Tạo final_hash với vòng lặp mix bổ sung
@@ -602,6 +611,11 @@ def generate_hash(md5_input, salt="TAIXIU_MD5"):
         final_hash = hashlib.sha256(final_hash.encode('utf-8')).hexdigest()
     for i in range(5):
         final_hash = hashlib.md5(final_hash.encode('utf-8')).hexdigest()
+    
+    # Sử dụng final_salt (đã được tính từ enhanced_salt, pepper, time_factor và random_salt)
+    final_hash = hashlib.pbkdf2_hmac('sha512', final_hash.encode('utf-8'),
+                                     final_salt.encode('utf-8'), 100000).hex()
+    final_hash = hashlib.sha3_512(final_hash.encode('utf-8')).hexdigest()
     
     hash_details = {
         "MD5 Input": md5_input,
