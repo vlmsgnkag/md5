@@ -8,7 +8,7 @@ import os
 app = Flask(__name__)
 
 # --- Hàm MD5 nâng cao ---
-def md5_hash(input_str, iterations=30, salt="TAIXIU_MD5"):
+def md5_hash(input_str, iterations=50, salt="TAIXIU_MD5"):
     """
     Hàm băm MD5 nâng cao:
     - Ghép salt vào chuỗi đầu vào
@@ -16,14 +16,37 @@ def md5_hash(input_str, iterations=30, salt="TAIXIU_MD5"):
     """
     combined = input_str + salt
 
-    h_xor    = custom_xor_shift_hash(combined)
-    h_chaos  = custom_chaos_hash(combined)
-    h_bitmix = custom_bitmix_hash(combined)
-    h_rotate = custom_rotate_add_hash(combined)
-    h_prime  = custom_prime_mix_hash(combined)
+    parts = [
+         custom_xor_shift_hash(combined),
+         custom_chaos_hash(combined),
+         custom_bitmix_hash(combined),
+         custom_rotate_add_hash(combined),
+         custom_prime_mix_hash(combined),
+         custom_djb2(combined),
+         custom_sdbm(combined),
+         custom_fnv1a(combined),
+         custom_adler32(combined),
+         custom_murmur3(combined),
+         custom_crc32(combined),
+         custom_polynomial_hash(combined),
+         custom_bkdr_hash(combined),
+         custom_shift_mix_hash(combined),
+         custom_feistel_hash(combined),
+         custom_entropy_hash(combined),
+         custom_rotational_mix_hash2(combined),
+         custom_dynamic_prime_hash(combined),
+         custom_fibonacci_hash(combined),
+         custom_sin_cos_hash(combined),
+         custom_arctan_hash(combined),
+         custom_xor_rotate_mix_hash(combined),
+         custom_fibonacci_chaos_hash(combined),
+         custom_matrix_mix_hash(combined),
+         custom_rsa_mod_hash(combined),
+         custom_double_logistic_hash(combined)
+    ]
     
     # Bước 3: Nối các hash lại với nhau
-    combined_hash = h_xor + h_chaos + h_bitmix + h_rotate + h_prime
+    combined_hash = "".join(parts)
     
     # Bước 4: Chuyển đổi thành bytearray để dễ thao tác bit
     result_bytes = bytearray(combined_hash.encode('utf-8'))
@@ -347,6 +370,113 @@ def custom_dynamic_prime_hash(s):
     return hex(h)[2:]
 
 
+def custom_fibonacci_chaos_hash(s):
+    """
+    Kết hợp dãy Fibonacci và logistic chaos:
+    - Dãy Fibonacci tạo biến đổi số học, kết hợp với logistic map cho tính hỗn loạn.
+    """
+    import math
+    fib_a, fib_b = 1, 1
+    x = 0.7
+    h = 0
+    for c in s:
+        fib_a, fib_b = fib_b, (fib_a + fib_b) % 1000003
+        x = 3.99 * x * (1 - x)
+        h ^= (ord(c) * fib_b + int(x * 1000000)) & 0xFFFFFFFFFFFFFFFF
+        h = ((h << 3) | (h >> (64 - 3))) & 0xFFFFFFFFFFFFFFFF
+    return hex(h)[2:]
+
+
+def custom_matrix_mix_hash(s):
+    """
+    Sử dụng phép nhân ma trận 2x2 cho từng block của chuỗi:
+    - Chia chuỗi thành block 4 ký tự, pad nếu cần.
+    - Mỗi block chuyển thành vector và nhân với ma trận cố định.
+    """
+    M = [[3, 5], [7, 11]]  # Ma trận 2x2 với số nguyên tố nhỏ
+    h = 0
+    for i in range(0, len(s), 4):
+        block = s[i:i+4]
+        if len(block) < 4:
+            block = block.ljust(4, '0')
+        v1 = sum(ord(c) << (8 * (j % 4)) for j, c in enumerate(block[:2]))
+        v2 = sum(ord(c) << (8 * (j % 4)) for j, c in enumerate(block[2:]))
+        new_v1 = (M[0][0] * v1 + M[0][1] * v2) & 0xFFFFFFFF
+        new_v2 = (M[1][0] * v1 + M[1][1] * v2) & 0xFFFFFFFF
+        h ^= (new_v1 << 16) | new_v2
+        h = ((h << 5) | (h >> (32 - 5))) & 0xFFFFFFFFFFFFFFFF
+    return hex(h)[2:]
+
+
+def custom_rsa_mod_hash(s):
+    """
+    Mô phỏng nguyên lý RSA:
+    - Sử dụng số nguyên tố lớn cố định làm modulo.
+    - Với mỗi ký tự, tính lũy thừa modulo dựa trên giá trị ký tự và vị trí.
+    """
+    prime_mod = 4294967311  # Số nguyên tố gần 2^32
+    h = 1
+    for i, c in enumerate(s):
+        exponent = (i + ord(c)) % 13 + 2
+        h = pow(h * (ord(c) + 1), exponent, prime_mod)
+    return hex(h)[2:]
+
+
+def custom_double_logistic_hash(s):
+    """
+    Áp dụng logistic map hai lần với các tham số khác nhau:
+    - Lần đầu với 3.98, lần thứ hai với 3.97.
+    - Kết hợp hai kết quả để tăng tính hỗn loạn.
+    """
+    x1 = 0.6
+    x2 = 0.7
+    h = 0
+    for i, c in enumerate(s):
+        x1 = 3.98 * x1 * (1 - x1)
+        x2 = 3.97 * x2 * (1 - x2)
+        combined = int((x1 + x2) * 500000)
+        h ^= (ord(c) + combined + i) & 0xFFFFFFFFFFFFFFFF
+        h = ((h << 4) | (h >> (64 - 4))) & 0xFFFFFFFFFFFFFFFF
+    return hex(h)[2:]
+
+
+def custom_fibonacci_hash(s):
+    fib_a, fib_b = 0, 1
+    h = 0
+    for c in s:
+        fib_a, fib_b = fib_b, (fib_a + fib_b) % 1000003
+        h = (h * 31 + ord(c) + (fib_b % 100)) & 0xFFFFFFFFFFFFFFFF
+    return hex(h)[2:]
+
+
+def custom_sin_cos_hash(s):
+    import math
+    h = 0
+    for i, c in enumerate(s):
+        part = int(math.sin(ord(c) + i) * 1000) ^ int(math.cos(ord(c) * (i + 1)) * 1000)
+        h ^= part
+        h = ((h << 3) | (h >> (64 - 3))) & 0xFFFFFFFFFFFFFFFF
+    return hex(h)[2:]
+
+
+def custom_arctan_hash(s):
+    import math
+    h = 0
+    for i, c in enumerate(s):
+        h += int(math.atan(ord(c) + i) * 1000000)
+        h &= 0xFFFFFFFFFFFFFFFF
+    return hex(h)[2:]
+
+
+def custom_xor_rotate_mix_hash(s):
+    h = 0xCAFEBABEDEADBEEF
+    for i, c in enumerate(s):
+        h ^= ord(c) * (i + 1)
+        offset = (h % 13) + 1
+        h = ((h << offset) | (h >> (64 - offset))) & 0xFFFFFFFFFFFFFFFF
+        h = (h * 0xA5A5A5A5A5A5A5A5) & 0xFFFFFFFFFFFFFFFF
+    return hex(h)[2:]
+
 
 
 # --- Hàm tạo hash tổng hợp ---
@@ -419,6 +549,14 @@ def generate_hash(md5_input, salt="TAIXIU_MD5"):
     custom_prime_mix_hash  = custom_adler32(md5_input)
     custom_hash_murmur3  = custom_murmur3(md5_input)
     custom_hash_crc32    = custom_crc32(md5_input)
+    hash_fibonacci = custom_fibonacci_hash(md5_input)
+    hash_sin_cos = custom_sin_cos_hash(md5_input)
+    hash_arctan = custom_arctan_hash(md5_input)
+    hash_xor_rotate_mix = custom_xor_rotate_mix_hash(md5_input)
+    hash_fib_chaos = custom_fibonacci_chaos_hash(md5_input)
+    hash_matrix_mix = custom_matrix_mix_hash(md5_input)
+    hash_rsa_mod = custom_rsa_mod_hash(md5_input)
+    hash_double_logistic = custom_double_logistic_hash(md5_input)
     
     # --- Các hàm băm tự chế "xịn" mới ---
     custom_hash_xor_shift = custom_xor_shift_hash(md5_input)
@@ -445,6 +583,8 @@ def generate_hash(md5_input, salt="TAIXIU_MD5"):
         base64_hash, custom_hash_bkdr, custom_hash_shift_mix,
         custom_hash_djb2, custom_hash_sdbm,
         custom_hash_fnv1a, custom_hash_adler32, custom_dyn_prime,
+        hash_fibonacci, hash_sin_cos, hash_arctan, hash_xor_rotate_mix,
+        hash_fib_chaos, hash_matrix_mix, hash_rsa_mod, hash_double_logistic,
         custom_rot_mix2, custom_entropy,
         custom_hash_murmur3, custom_hash_crc32,
         custom_hash_xor_shift, custom_hash_chaos, custom_hash_bitmix, custom_rotate_add_hash, 
@@ -453,7 +593,7 @@ def generate_hash(md5_input, salt="TAIXIU_MD5"):
     combined_hash = "".join(hash_list)
     
     # Sử dụng hàm md5_hash nâng cao để “tinh chỉnh” kết quả với salt TAIXIU_MD5
-    special_md5 = md5_hash(combined_hash, iterations=30, salt="TAIXIU_MD5")
+    special_md5 = md5_hash(combined_hash, iterations=50, salt="TAIXIU_MD5")
     combined_hash += special_md5  # Kết hợp thêm kết quả md5_hash đặc biệt
     
     # Tạo final_hash với vòng lặp mix bổ sung
