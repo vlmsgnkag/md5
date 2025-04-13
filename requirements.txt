@@ -1,0 +1,19 @@
+# Core Telegram bot framework
+python-telegram-bot==20.3
+
+# Các thư viện chuẩn trong xử lý logic và tính toán
+requests==2.31.0
+numpy==1.26.4
+pandas==2.2.2
+scipy==1.13.0
+
+# Hỗ trợ số học chính xác cao
+decimal==1.70  # chỉ cần nếu bạn chạy môi trường không tích hợp sẵn (optional)
+
+# Cần thiết cho bảo mật, hashing
+cryptography==42.0.5
+
+# Các thư viện bổ sung (tuỳ chọn nâng cao/AI phân tích)
+scikit-learn==1.4.2
+matplotlib==3.8.4
+seaborn==0.13.2
